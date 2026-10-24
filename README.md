@@ -35,6 +35,46 @@ npm run dev
 
 Create a production build with `npm run build`.
 
+## Run the four-city API
+
+The FastAPI backend serves deterministic synthetic replay data for Bengaluru,
+Mysuru, Hubballi–Dharwad, and Belagavi. It uses local deterministic data by
+default, so an Open Charge Map key is not needed to try the API.
+
+```powershell
+cd backend
+Copy-Item .env.example .env
+python -m pip install -r requirements.txt
+python -m uvicorn app.main:app --reload
+```
+
+Set `VITE_API_BASE_URL=http://localhost:8000/api/v1` in `frontend/.env.local`
+to connect the Vite frontend. Without a running API, the frontend safely uses
+its existing local demo data.
+
+For a real station-location snapshot, set `EVISION_OCM_API_KEY` and run
+`python -m scripts.import_ocm`. After reviewing the snapshot, initialise the
+database and load it with:
+
+```powershell
+alembic upgrade head
+python -m scripts.load_catalogue data/raw/ocm-karnataka.json
+python -m scripts.generate_replay --months 6
+```
+
+Imported locations require provider attribution and must be reviewed before use;
+operational values remain deterministic synthetic replay data.
+
+Optional provider credentials belong only in the ignored `backend/.env` file:
+
+```env
+EVISION_OCM_API_KEY=replace-with-your-open-charge-map-key
+EVISION_ELECTRICITY_MAPS_API_KEY=replace-with-your-electricity-maps-key
+```
+
+Open Charge Map supplies real location metadata. Electricity Maps is optional;
+without it, EVision labels its carbon value as a scenario estimate.
+
 ## Documentation
 
 - [Documentation index](docs/README.md)

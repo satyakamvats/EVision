@@ -13,3 +13,10 @@ frontend/dist/
 .env
 .env.*
 !.env.example
+
+# Imported source snapshots and generated replay artifacts
+data/
+backend/data/
+artifacts/
+__pycache__/
+.pytest_cache/

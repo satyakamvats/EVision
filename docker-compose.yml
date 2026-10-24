@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: evision
+      POSTGRES_USER: evision
+      POSTGRES_PASSWORD: evision
+    ports: ["5433:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evision -d evision"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  backend:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    working_dir: /app
+    volumes: ["./backend:/app"]
+    environment:
+      EVISION_DATABASE_URL: postgresql+psycopg://evision:evision@db:5432/evision
+      EVISION_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    ports: ["8000:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
