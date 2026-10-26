@@ -109,10 +109,26 @@ class DecisionEngine:
         front, dominated = self.recommend(request)
         if not front:
             return {}, [], []
-        fastest = min(front, key=lambda item: (item.total_time_min, item.station.id, item.delay_min))
-        balanced = min(front, key=lambda item: (item.generalised_cost_inr, item.station.id, item.delay_min))
-        greenest = min(front, key=lambda item: (item.carbon_kg, item.total_time_min, item.station.id, item.delay_min))
         all_options = front + dominated
+        fastest_ranked = sorted(all_options, key=lambda item: (item.total_time_min, item.station.id, item.delay_min))
+        balanced_ranked = sorted(all_options, key=lambda item: (item.generalised_cost_inr, item.total_time_min, item.station.id, item.delay_min))
+        greenest_ranked = sorted(all_options, key=lambda item: (item.carbon_kg, item.total_time_min, item.station.id, item.delay_min))
+
+        # Each card is a driver-facing alternative.  Keep each strategy's
+        # metric ordering, but avoid rendering the same station three times
+        # when enough candidates exist.  If only one station is available,
+        # duplication remains the honest result.
+        used_stations: set[str] = set()
+
+        def distinct_pick(ranked: list[RecommendationOption]) -> RecommendationOption:
+            choice = next((item for item in ranked if item.station.id not in used_stations), ranked[0])
+            used_stations.add(choice.station.id)
+            return choice
+
+        fastest = distinct_pick(fastest_ranked)
+        balanced = distinct_pick(balanced_ranked)
+        greenest = distinct_pick(greenest_ranked)
+
         if request.strategy == "nearest":
             balanced = min(all_options, key=lambda item: (item.travel_km, item.delay_min, item.station.id))
         elif request.strategy == "cheapest":
