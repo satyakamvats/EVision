@@ -22,7 +22,7 @@ class ForecastRuntime:
     def forecast(self, station: dict, rows: list[dict], as_of, horizon: int):
         horizon = max(1, min(3, horizon)); cache_key = (station["id"], as_of.date().isoformat(), as_of.hour, horizon)
         if cache_key in self.cache: return self.cache[cache_key]
-        target = as_of.astimezone(rows[0]["_dt"].tzinfo).replace(minute=0, second=0, microsecond=0)
+        target = (as_of + timedelta(hours=horizon)).astimezone(rows[0]["_dt"].tzinfo).replace(minute=0, second=0, microsecond=0)
         exact = [position for position, row in enumerate(rows) if row["_dt"] == target]
         same_slot = [position for position, row in enumerate(rows) if row["_dt"].weekday() == target.weekday() and row["_dt"].hour == target.hour]
         candidates = exact or same_slot or list(range(len(rows)))
@@ -30,6 +30,16 @@ class ForecastRuntime:
         models, qhat = self.models[horizon]; vector = feature_vector(station, rows, index).reshape(1, -1)
         import xgboost as xgb
         values = [float(np.clip(models[key].predict(xgb.DMatrix(vector))[0], 0, 1)) for key in (".1", ".5", ".9")]
+        # The registered model supplies the learned forecast.  Blend in the
+        # station's own historical weekday/hour residual so two stations with
+        # the same global trend do not receive identical temporal behaviour.
+        # This uses only rows available in the scenario artifact.
+        slot_rows = [row for row in rows if row["_dt"].weekday() == target.weekday() and row["_dt"].hour == target.hour]
+        if slot_rows and rows:
+            slot_mean = float(np.mean([row["occupancy_rate"] for row in slot_rows]))
+            station_mean = float(np.mean([row["occupancy_rate"] for row in rows]))
+            residual = float(np.clip((slot_mean - station_mean) * 1.25, -.12, .12))
+            values = [float(np.clip(value + residual, 0, 1)) for value in values]
         from .forecasting import apply_cqr
         lower, median, upper = apply_cqr([values[0]], [values[1]], [values[2]], qhat)
         confidence = float(np.clip(1 - (upper[0] - lower[0]), 0, 1))

@@ -86,7 +86,7 @@ class DecisionEngine:
                 horizon = max(1, min(3, request.forecast_horizon_h or travel_horizon))
                 if delay_h + travel_horizon > 3:
                     continue
-                forecast_at = request.as_of + timedelta(hours=max(delay_h, request.forecast_horizon_h))
+                forecast_at = request.as_of + timedelta(hours=delay_h)
                 result.append(Candidate(summary, delay_h, route, self._forecast(raw, forecast_at, horizon)))
         return result
 
