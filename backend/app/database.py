@@ -4,4 +4,6 @@ from .settings import get_settings
 
 
 def session_factory() -> sessionmaker[Session]:
-    return sessionmaker(bind=create_engine(get_settings().database_url), expire_on_commit=False)
+    url = get_settings().database_url
+    connect_args = {"connect_timeout": 3} if url.startswith("postgresql") else {}
+    return sessionmaker(bind=create_engine(url, connect_args=connect_args, pool_pre_ping=True), expire_on_commit=False)

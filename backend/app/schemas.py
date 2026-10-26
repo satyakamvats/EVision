@@ -8,6 +8,11 @@ class Point(BaseModel):
     lon: float = Field(ge=74, le=79)
 
 
+class RouteRequest(BaseModel):
+    origin: Point
+    destination: Point
+
+
 class CityOut(BaseModel):
     slug: str
     name: str
@@ -37,6 +42,7 @@ class StationSummary(BaseModel):
     rating: float
     distance_km: float | None = None
     eta_min: float | None = None
+    route_source: str = "haversine_fallback"
     occupancy_rate: float
     available_count: int
     forecast: ForecastBand
@@ -45,11 +51,12 @@ class StationSummary(BaseModel):
 
 class StationListOut(BaseModel):
     as_of: datetime
-    data_source: Literal["synthetic_karnataka"] = "synthetic_karnataka"
+    data_source: Literal["synthetic", "urban_ev", "charged", "observed_live", "synthetic_karnataka", "scenario_estimate"] = "synthetic"
     stations: list[StationSummary]
 
 
 class StationDetailOut(BaseModel):
+    data_source: Literal["synthetic", "urban_ev", "charged", "observed_live", "synthetic_karnataka", "scenario_estimate"] = "synthetic"
     station: StationSummary
     utilisation: dict[str, float]
     nearby: list[StationSummary]
@@ -66,6 +73,8 @@ class ForecastPoint(BaseModel):
 class StationForecastOut(BaseModel):
     station_id: str
     as_of: datetime
+    data_source: Literal["synthetic", "urban_ev", "charged", "observed_live", "synthetic_karnataka", "scenario_estimate"] = "synthetic"
+    model_version: str = "synthetic-karnataka-v1"
     history: list[ForecastPoint]
     forecast: list[ForecastPoint]
 
@@ -108,22 +117,27 @@ class RecommendationOption(BaseModel):
     queue: QueueOut
     cost_terms: dict[str, float]
     explanation: str
+    route_source: str = "haversine_fallback"
+    vs_nearest: dict[str, float] = Field(default_factory=dict)
 
 
 class RecommendOut(BaseModel):
     as_of: datetime
-    data_source: Literal["synthetic_karnataka"] = "synthetic_karnataka"
+    data_source: Literal["synthetic", "urban_ev", "charged", "observed_live", "synthetic_karnataka", "scenario_estimate"] = "synthetic"
     model_version: str
     carbon_source: Literal["scenario", "observed"] = "scenario"
     options: dict[str, RecommendationOption]
     distinct_count: int
     pareto_front: list[dict[str, float | str]]
+    dominated: list[dict[str, float | str]] = Field(default_factory=list)
+    reason: str | None = None
     params_used: RecommendRequest
 
 
 class RevealOut(BaseModel):
     station_id: str
     as_of: datetime
+    data_source: Literal["synthetic", "urban_ev", "charged", "observed_live", "synthetic_karnataka", "scenario_estimate"] = "synthetic"
     observed_occupancy_rate: float
     realised_wait_min: float
     realised_regret_inr: float
@@ -140,10 +154,31 @@ class CompareRow(BaseModel):
 
 
 class CompareOut(BaseModel):
+    data_source: Literal["synthetic", "urban_ev", "charged", "observed_live", "synthetic_karnataka", "scenario_estimate"] = "synthetic"
     rows: list[CompareRow]
     mean_regret_inr: float
     failure_rate: float
 
 
 class QueueExplainOut(QueueOut):
+    data_source: Literal["synthetic", "urban_ev", "charged", "observed_live", "synthetic_karnataka", "scenario_estimate"] = "synthetic"
     wait_min: float
+
+
+class UserProfilePatch(BaseModel):
+    display_name: str | None = Field(default=None, max_length=128)
+
+
+class PreferencesPatch(BaseModel):
+    energy_kwh: float | None = Field(default=None, ge=1, le=150)
+    radius_km: float | None = Field(default=None, ge=.5, le=100)
+    risk_kappa: float | None = Field(default=None, ge=0, le=1)
+    value_of_time_per_h: float | None = Field(default=None, ge=0, le=10000)
+    carbon_price_per_kg: float | None = Field(default=None, ge=0, le=10000)
+    carbon_scenario: Literal["flat", "tou_profile", "low", "high"] | None = None
+    origin_lat: float | None = Field(default=None, ge=11, le=17)
+    origin_lon: float | None = Field(default=None, ge=74, le=79)
+
+
+class FavouriteRequest(BaseModel):
+    station_id: str = Field(min_length=1, max_length=128)

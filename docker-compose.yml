@@ -6,6 +6,8 @@ services:
       POSTGRES_USER: evision
       POSTGRES_PASSWORD: evision
     ports: ["5433:5432"]
+    volumes:
+      - evision_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U evision -d evision"]
       interval: 5s
@@ -13,9 +15,11 @@ services:
       retries: 10
   backend:
     build: ./backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     working_dir: /app
     volumes: ["./backend:/app"]
+    env_file:
+      - ./backend/.env
     environment:
       EVISION_DATABASE_URL: postgresql+psycopg://evision:evision@db:5432/evision
       EVISION_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
@@ -23,3 +27,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  frontend:
+    build: ./frontend
+    ports: ["5173:80"]
+    depends_on:
+      - backend
+
+volumes:
+  evision_db_data:

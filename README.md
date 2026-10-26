@@ -33,6 +33,11 @@ npm install
 npm run dev
 ```
 
+The dashboard uses OpenStreetMap tiles through Leaflet. It works without an
+OSRM server using the deterministic haversine route fallback. To enable routed
+travel times, set `EVISION_ROUTING_PROVIDER=osrm` and configure
+`EVISION_ROUTING_URL` in `backend/.env`.
+
 Create a production build with `npm run build`.
 
 ## Run the four-city API
@@ -49,8 +54,42 @@ python -m uvicorn app.main:app --reload
 ```
 
 Set `VITE_API_BASE_URL=http://localhost:8000/api/v1` in `frontend/.env.local`
-to connect the Vite frontend. Without a running API, the frontend safely uses
-its existing local demo data.
+to connect the Vite frontend. Supabase login is enabled by setting
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `EVISION_SUPABASE_URL`, and
+`EVISION_SUPABASE_JWKS_URL`. Without those values, the public synthetic demo
+still works and the account page explains that authentication is unavailable.
+
+For a local containerized run, use `docker compose up --build`; this starts
+PostgreSQL/PostGIS, FastAPI, and the production frontend at
+`http://localhost:5173`.
+
+Generate reproducible local artifacts from `backend/`:
+
+```powershell
+python -m scripts.train_models --artifacts artifacts
+python -m scripts.run_evaluation --artifacts artifacts
+```
+
+### Phase 4 data ingestion
+
+Every adapter writes the same canonical artifact layout: stations, hourly
+observations, weather, prices, adjacency, chronological splits, source hashes,
+and a quality report. The synthetic adapter is deterministic and requires no
+credentials:
+
+```powershell
+cd backend
+python -m scripts.ingest_data --source synthetic --output artifacts/datasets
+python -m scripts.ingest_data --source charged --input data/raw/charged --output artifacts/datasets
+python -m scripts.ingest_data --source urban_ev --input data/raw/urban_ev --output artifacts/datasets
+python -m scripts.ingest_data --source ocm --input data/raw/ocm-karnataka.json --output artifacts/datasets
+```
+
+UrbanEV and CHARGED files are optional. Missing files produce an explicit
+empty-state quality report; they are never silently represented as live data.
+The OCM adapter stores reviewed station metadata and source payloads only—OCM
+does not provide EVision occupancy truth. Use `GET /api/v1/datasets/status` to
+inspect artifact availability and data quality from the running API.
 
 For a real station-location snapshot, set `EVISION_OCM_API_KEY` and run
 `python -m scripts.import_ocm`. After reviewing the snapshot, initialise the
@@ -97,4 +136,9 @@ without it, EVision labels its carbon value as a scenario estimate.
 
 ## Project status
 
-The frontend currently uses realistic local mock data. Backend integration is designed to fit behind the documented `/api/v1` service boundary. Synthetic or assumed values are labelled in the interface and must not be presented as live availability.
+The repository now runs a synthetic/replay-first full-stack path with a real
+Leaflet/OpenStreetMap map, deterministic queue/recommendation logic, optional
+OSRM routing, reproducible model/replay artifact commands, and Supabase Auth
+integration. UrbanEV/CHARGED training and optional live station adapters remain
+data/provider configuration steps; Open Charge Map metadata must never be
+presented as live availability.

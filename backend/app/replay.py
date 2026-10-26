@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import asin, cos, exp, pi, sin, sqrt
+import json
+from pathlib import Path
 import random
 from .schemas import ForecastBand, QueueOut, StationSummary
 
@@ -85,12 +87,56 @@ class ReplayStore:
         return next((s for s in self.stations if s["id"] == station_id), None)
 
 
+class ScenarioReplayStore(ReplayStore):
+    """Replay-compatible store backed by the four-city scenario artifact."""
+    model_version = "karnataka-scenario-reference-v1"
+    data_source = "scenario_estimate"
+
+    def __init__(self, root: str | Path):
+        self.seed = 0
+        folder = Path(root)
+        rows = json.loads((folder / "stations.json").read_text(encoding="utf-8"))
+        self.stations = [{"id": row["station_id"], "city": row["city"], "name": row["name"], "address": row.get("address") or row["city"], "lat": row["lat"], "lng": row["lon"], "capacity": row["capacity"], "chargers": row["capacity"], "power_kw": row.get("power_kw") or 22.0, "connectors": row.get("connectors") or ["Unknown"], "price": row.get("price", 16.0), "rating": 4.5, "attribution": row.get("attribution", "Open Charge Map station metadata; occupancy is a reference-calibrated scenario estimate.")} for row in rows]
+        self._observations: dict[str, list[dict]] = {}
+        self.forecast_provider = None
+        with (folder / "observations.jsonl").open(encoding="utf-8") as handle:
+            for line in handle:
+                row = json.loads(line)
+                row["_dt"] = datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00"))
+                self._observations.setdefault(row["station_id"], []).append(row)
+
+    def set_forecast_provider(self, provider) -> None:
+        self.forecast_provider = provider
+        self.model_version = provider.version
+
+    def occupancy(self, station: dict, at: datetime) -> float:
+        rows = self._observations.get(station["id"], [])
+        if not rows:
+            return super().occupancy(station, at)
+        target_hour = at.astimezone(timezone.utc).hour
+        matches = [row for row in rows if datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00")).hour == target_hour]
+        row = matches[0] if matches else rows[0]
+        return float(row["occupancy_rate"])
+
+    def forecast(self, station: dict, as_of: datetime, horizon_h: int = 1) -> ForecastBand:
+        if self.forecast_provider is not None:
+            return self.forecast_provider.forecast(station, self._observations.get(station["id"], []), as_of, horizon_h)
+        q50 = self.occupancy(station, as_of + timedelta(hours=horizon_h))
+        width = min(0.34, 0.14 + horizon_h * 0.04)
+        confidence = 1 - width
+        return ForecastBand(horizon_h=horizon_h, q10=round(max(0, q50 - width / 2), 3), q50=round(q50, 3), q90=round(min(1, q50 + width / 2), 3), confidence=round(confidence, 3), confidence_label="high" if confidence >= .8 else "medium" if confidence >= .65 else "low")
+
+
 def erlang_c(capacity: int, tau_h: float, occupied: float) -> tuple[QueueOut, float]:
-    offered = min(occupied, capacity * .98)
-    rho = offered / capacity
-    b = 1.0
-    for k in range(1, capacity + 1):
-        b = offered * b / (k + offered * b)
-    p_wait = b / max(1e-9, 1 - rho * (1 - b))
+    offered = max(0.0, min(float(occupied), capacity * .98))
+    rho = offered / max(1, capacity)
+    if offered == 0:
+        return QueueOut(c=capacity, tau_h=tau_h, lambda_per_h=0, rho=0, p_wait=0, saturated=False), 0.0
+    term, total = 1.0, 1.0
+    for k in range(1, capacity):
+        term *= offered / k
+        total += term
+    tail = term * offered / capacity / max(1e-9, 1 - rho)
+    p_wait = tail / (total + tail)
     wait = min(60.0, 60 * p_wait * tau_h / max(1e-9, capacity - offered))
-    return QueueOut(c=capacity, tau_h=tau_h, lambda_per_h=round(offered / tau_h, 3), rho=round(rho, 3), p_wait=round(p_wait, 3), saturated=rho >= .98), round(wait, 2)
+    return QueueOut(c=capacity, tau_h=tau_h, lambda_per_h=round(offered / tau_h, 3), rho=round(rho, 3), p_wait=round(p_wait, 3), saturated=offered >= capacity * .98), round(wait, 2)

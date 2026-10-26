@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID, uuid4
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from geoalchemy2 import Geography
@@ -100,3 +100,72 @@ class Forecast(Base):
     q50: Mapped[float] = mapped_column(Float)
     q90: Mapped[float] = mapped_column(Float)
     model_version: Mapped[str] = mapped_column(String(128))
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    email: Mapped[str | None] = mapped_column(String(320), index=True)
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("user_profiles.id", ondelete="CASCADE"), primary_key=True)
+    energy_kwh: Mapped[float] = mapped_column(Float, default=20)
+    radius_km: Mapped[float] = mapped_column(Float, default=25)
+    risk_kappa: Mapped[float] = mapped_column(Float, default=.5)
+    value_of_time_per_h: Mapped[float] = mapped_column(Float, default=150)
+    carbon_price_per_kg: Mapped[float] = mapped_column(Float, default=.5)
+    carbon_scenario: Mapped[str] = mapped_column(String(32), default="tou_profile")
+    origin_lat: Mapped[float | None] = mapped_column(Float)
+    origin_lon: Mapped[float | None] = mapped_column(Float)
+
+
+class FavouriteStation(Base):
+    __tablename__ = "favourite_stations"
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("user_profiles.id", ondelete="CASCADE"), primary_key=True)
+    station_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RecommendationHistory(Base):
+    __tablename__ = "recommendation_history"
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    request_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    response_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    data_source: Mapped[str] = mapped_column(String(32), default="synthetic")
+
+
+class ModelRegistry(Base):
+    __tablename__ = "model_registry"
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    model_version: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    model_type: Mapped[str] = mapped_column(String(64))
+    config_hash: Mapped[str] = mapped_column(String(128))
+    data_hash: Mapped[str] = mapped_column(String(128))
+    split_hash: Mapped[str] = mapped_column(String(128))
+    metrics_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    artifact_uri: Mapped[str | None] = mapped_column(Text)
+    library_versions: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EvaluationAblation(Base):
+    __tablename__ = "evaluation_ablations"
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("evaluation_runs.id", ondelete="CASCADE"), index=True)
+    variant: Mapped[str] = mapped_column(String(128))
+    metrics_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class EvaluationSensitivity(Base):
+    __tablename__ = "evaluation_sensitivities"
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("evaluation_runs.id", ondelete="CASCADE"), index=True)
+    parameter: Mapped[str] = mapped_column(String(128))
+    value: Mapped[float] = mapped_column(Float)
+    metrics_json: Mapped[dict] = mapped_column(JSONB, default=dict)
