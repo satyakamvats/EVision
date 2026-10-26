@@ -22,7 +22,11 @@ class ForecastRuntime:
     def forecast(self, station: dict, rows: list[dict], as_of, horizon: int):
         horizon = max(1, min(3, horizon)); cache_key = (station["id"], as_of.date().isoformat(), as_of.hour, horizon)
         if cache_key in self.cache: return self.cache[cache_key]
-        index = min(range(len(rows)), key=lambda position: abs(rows[position]["_dt"] - as_of))
+        target = as_of.astimezone(rows[0]["_dt"].tzinfo).replace(minute=0, second=0, microsecond=0)
+        exact = [position for position, row in enumerate(rows) if row["_dt"] == target]
+        same_slot = [position for position, row in enumerate(rows) if row["_dt"].weekday() == target.weekday() and row["_dt"].hour == target.hour]
+        candidates = exact or same_slot or list(range(len(rows)))
+        index = min(candidates, key=lambda position: abs(rows[position]["_dt"] - target))
         models, qhat = self.models[horizon]; vector = feature_vector(station, rows, index).reshape(1, -1)
         import xgboost as xgb
         values = [float(np.clip(models[key].predict(xgb.DMatrix(vector))[0], 0, 1)) for key in (".1", ".5", ".9")]

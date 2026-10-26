@@ -113,10 +113,26 @@ class ScenarioReplayStore(ReplayStore):
         rows = self._observations.get(station["id"], [])
         if not rows:
             return super().occupancy(station, at)
-        target_hour = at.astimezone(timezone.utc).hour
-        matches = [row for row in rows if datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00")).hour == target_hour]
-        row = matches[0] if matches else rows[0]
+        row = self._reference_row(rows, at)
         return float(row["occupancy_rate"])
+
+    @staticmethod
+    def _reference_row(rows: list[dict], at: datetime) -> dict:
+        """Select an honest replay reference for live-clock requests.
+
+        The generated scenario ends before a real demo clock can reach it. An
+        exact timestamp is preferred; otherwise use the closest historical row
+        with the same weekday and hour, rather than silently returning the first
+        row from the dataset.
+        """
+        target = at.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        exact = [row for row in rows if row["_dt"] == target]
+        if exact:
+            return exact[0]
+        same_slot = [row for row in rows if row["_dt"].weekday() == target.weekday() and row["_dt"].hour == target.hour]
+        if same_slot:
+            return min(same_slot, key=lambda row: abs(row["_dt"] - target))
+        return min(rows, key=lambda row: abs(row["_dt"] - target))
 
     def forecast(self, station: dict, as_of: datetime, horizon_h: int = 1) -> ForecastBand:
         if self.forecast_provider is not None:
