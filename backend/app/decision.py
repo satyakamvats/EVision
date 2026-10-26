@@ -63,10 +63,12 @@ class DecisionEngine:
                 continue
             route = self.routing.route((request.origin.lat, request.origin.lon), (raw["lat"], raw["lng"]))
             for delay_h in range(request.max_delay_h + 1):
-                horizon = max(1, min(3, ceil(delay_h + route.duration_min / 60)))
-                if delay_h + route.duration_min / 60 > 3:
+                travel_horizon = ceil(route.duration_min / 60)
+                horizon = max(1, min(3, request.forecast_horizon_h or travel_horizon))
+                if delay_h + travel_horizon > 3:
                     continue
-                result.append(Candidate(summary, delay_h, route, self._forecast(raw, request.as_of + timedelta(hours=delay_h), horizon)))
+                forecast_at = request.as_of + timedelta(hours=max(delay_h, request.forecast_horizon_h))
+                result.append(Candidate(summary, delay_h, route, self._forecast(raw, forecast_at, horizon)))
         return result
 
     def _option(self, candidate: Candidate, request: RecommendRequest, intensity: float, nearest: Candidate | None) -> RecommendationOption:
@@ -80,7 +82,12 @@ class DecisionEngine:
         _, high_wait = erlang_c_wait(station.capacity, .75, forecast.q90 * station.capacity)
         travel = candidate.route.duration_min
         total = travel + candidate.delay_h * 60 + wait
-        price = request.energy_kwh * station.price_inr_per_kwh
+        # Scenario tariffs vary by station and time-of-use period.  This is
+        # an estimate, not a live tariff feed, and is surfaced as such by the
+        # response's scenario data label.
+        hour = request.as_of.astimezone().hour
+        time_factor = 1.12 if 18 <= hour <= 22 else .92 if 0 <= hour < 6 else 1.0
+        price = request.energy_kwh * station.price_inr_per_kwh * time_factor
         carbon_kg = round((request.energy_kwh + candidate.route.distance_km * .18) * intensity / 1000, 2)
         terms = {"time": round(request.value_of_time_per_h * total / 60, 2), "price": round(price, 2), "carbon": round(request.carbon_price_per_kg * carbon_kg, 2)}
         explanation = f"Forecast occupancy is {forecast.q50:.0%} with {forecast.confidence_label} confidence; the route is {candidate.route.source.replace('_', ' ')}."

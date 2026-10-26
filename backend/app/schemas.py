@@ -82,6 +82,7 @@ class StationForecastOut(BaseModel):
 class RecommendRequest(BaseModel):
     origin: Point
     as_of: datetime
+    forecast_horizon_h: int = Field(default=1, ge=0, le=3)
     energy_kwh: float = Field(default=20, ge=1, le=150)
     radius_km: float = Field(default=25, ge=0.5, le=100)
     max_delay_h: int = Field(default=2, ge=0, le=2)

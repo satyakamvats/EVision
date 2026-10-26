@@ -96,7 +96,7 @@ class ScenarioReplayStore(ReplayStore):
         self.seed = 0
         folder = Path(root)
         rows = json.loads((folder / "stations.json").read_text(encoding="utf-8"))
-        self.stations = [{"id": row["station_id"], "city": row["city"], "name": row["name"], "address": row.get("address") or row["city"], "lat": row["lat"], "lng": row["lon"], "capacity": row["capacity"], "chargers": row["capacity"], "power_kw": row.get("power_kw") or 22.0, "connectors": row.get("connectors") or ["Unknown"], "price": row.get("price", 16.0), "rating": 4.5, "attribution": row.get("attribution", "Open Charge Map station metadata; occupancy is a reference-calibrated scenario estimate.")} for row in rows]
+        self.stations = [{"id": row["station_id"], "city": row["city"], "name": row["name"], "address": row.get("address") or row["city"], "lat": row["lat"], "lng": row["lon"], "capacity": row["capacity"], "chargers": row["capacity"], "power_kw": row.get("power_kw") or 22.0, "connectors": row.get("connectors") or ["Unknown"], "price": row.get("price") if row.get("price") is not None else round(13.5 + (sum(ord(char) for char in row["station_id"]) % 8) * .75, 2), "rating": 4.5, "attribution": row.get("attribution", "Open Charge Map station metadata; occupancy is a reference-calibrated scenario estimate.")} for row in rows]
         self._observations: dict[str, list[dict]] = {}
         self.forecast_provider = None
         with (folder / "observations.jsonl").open(encoding="utf-8") as handle:
