@@ -48,6 +48,18 @@ def _reliability(actual: np.ndarray, lower: np.ndarray, upper: np.ndarray) -> li
     return bins
 
 
+def _grouped_slice_metrics(actual: np.ndarray, predicted: np.ndarray, groups: dict[str, list[int]]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for label, indices in sorted(groups.items()):
+        if not indices:
+            continue
+        mask = np.asarray(indices, dtype=int)
+        score = asdict(metrics(actual[mask], predicted[mask]))
+        score["count"] = int(len(mask))
+        result[label] = score
+    return result
+
+
 def train_production_models(root: str | Path = "artifacts", scenario_root: str | Path = "artifacts/datasets/karnataka_scenario", seed: int = 42, max_rows: int = 180000) -> dict[str, Any]:
     examples = build_examples(scenario_root, max_rows=max_rows, seed=seed)
     output_root = Path(root); model_root = output_root / "models" / "scenario_estimate"; model_root.mkdir(parents=True, exist_ok=True)
@@ -64,9 +76,19 @@ def train_production_models(root: str | Path = "artifacts", scenario_root: str |
         qhat = max(0.0, fit_cqr(val_predictions[0], val_predictions[2], y_val))
         test_predictions = [np.clip(_predict(quantiles[str(q)], x_test), 0, 1) for q in (.1, .5, .9)]
         lower, median, upper = apply_cqr(*test_predictions, qhat)
-        persistence_pred = np.asarray([examples["observations"][sid][idx]["occupancy_rate"] for sid, idx, _, _, _ in test]) if False else np.asarray([examples["observations"][sid][idx]["occupancy_rate"] for sid, idx, _, _, _ in test])
+        persistence_pred = np.asarray([examples["observations"][sid][idx]["occupancy_rate"] for sid, idx, _, _, _ in test])
         history_pred = _baseline_history(train, test, examples["observations"])
-        model_metrics = asdict(metrics(y_test, median)); model_metrics.update({"pinball_q10": pinball_loss(y_test, lower, .1), "pinball_q50": pinball_loss(y_test, median, .5), "pinball_q90": pinball_loss(y_test, upper, .9), "coverage": float(np.mean((y_test >= lower) & (y_test <= upper))), "interval_width": float(np.mean(upper - lower)), "reliability": _reliability(y_test, lower, upper), "persistence_mae": asdict(metrics(y_test, persistence_pred))["mae"], "historical_average_mae": asdict(metrics(y_test, history_pred))["mae"]})
+        groups: dict[str, list[int]] = {"city=bengaluru": [], "city=mysuru": [], "city=hubballi-dharwad": [], "city=belagavi": [], "hour=00": []}
+        for position, (station_id, index, _, _, _) in enumerate(test):
+            station = examples["stations"][station_id]
+            dt = examples["observations"][station_id][index]["_dt"]
+            capacity = int(station.get("capacity") or 0)
+            city = station.get("city", "unknown")
+            capacity_bucket = "small_1_4" if capacity <= 4 else "medium_5_12" if capacity <= 12 else "large_13_plus"
+            occupancy_bucket = "low_0_33" if y_test[position] < .33 else "mid_33_66" if y_test[position] < .66 else "high_66_100"
+            for label in (f"city={city}", f"capacity={capacity_bucket}", f"hour={dt.hour:02d}", f"weekday={dt.weekday()}", f"occupancy={occupancy_bucket}"):
+                groups.setdefault(label, []).append(position)
+        model_metrics = asdict(metrics(y_test, median)); model_metrics.update({"pinball_q10": pinball_loss(y_test, lower, .1), "pinball_q50": pinball_loss(y_test, median, .5), "pinball_q90": pinball_loss(y_test, upper, .9), "coverage": float(np.mean((y_test >= lower) & (y_test <= upper))), "interval_width": float(np.mean(upper - lower)), "reliability": _reliability(y_test, lower, upper), "persistence_mae": asdict(metrics(y_test, persistence_pred))["mae"], "historical_average_mae": asdict(metrics(y_test, history_pred))["mae"], "slices": _grouped_slice_metrics(y_test, median, groups)})
         metadata = {"horizon": horizon, "version": f"xgb-scenario-v1-h{horizon}", "data_source": "scenario_estimate", "feature_names": FEATURE_NAMES, "qhat": qhat, "metrics": model_metrics, "dataset_hash": dataset_hash, "split_hash": hashlib.sha256(json.dumps(examples["split_metadata"], sort_keys=True).encode()).hexdigest(), "calibration": "validation_only_split_conformal_quantile", "quantiles": ["q10", "q50", "q90"]}
         (model_root / f"horizon-{horizon}-metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8"); report["models"][str(horizon)] = metadata
     report_path = output_root / "reports"; report_path.mkdir(parents=True, exist_ok=True); (report_path / "forecast_metrics_scenario_estimate.json").write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")

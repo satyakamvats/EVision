@@ -35,9 +35,9 @@ Last verified: 2026-10-26
 - [x] Saved point and quantile model artifacts for all horizons.
 - [x] Model registry with active scenario model.
 - [x] Calibration parameters and runtime version metadata.
-- [ ] Full city/capacity/hour/occupancy slice report.
-- [ ] Dedicated UrbanEV reference benchmark report.
-- [ ] Dedicated CHARGED reference benchmark report.
+- [x] Full city/capacity/hour/occupancy slice report.
+- [x] Dedicated UrbanEV reference benchmark report.
+- [x] Dedicated CHARGED reference benchmark report with all six available city slices.
 
 ## Backend integration
 
@@ -67,7 +67,10 @@ Last verified: 2026-10-26
 - Quantiles: q10, q50, q90.
 - Model directory: `backend/artifacts/models/scenario_estimate/`.
 - Metrics report: `backend/artifacts/reports/forecast_metrics_scenario_estimate.json`.
-
-The unchecked benchmark and slice-report tasks are non-blocking for the active
-four-city forecast path but remain visible so Phase 5 is not misrepresented as
-fully complete.
+- Reference benchmark report: `backend/artifacts/reports/reference_benchmarks.json`.
+- Reference benchmark runner: `backend/scripts/benchmark_reference_datasets.py`.
+- UrbanEV benchmark uses a deterministic two-million-row scan; CHARGED scans all
+  18,797,760 canonical observations and allocates an equal quota across AMS,
+  JHB, LOA, MEL, SPO, and SZH. Every report records its scan and sampling
+  bounds so reference numbers are not presented as full-population estimates
+  when a bounded scan is used.
