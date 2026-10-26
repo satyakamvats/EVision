@@ -54,7 +54,10 @@ class DecisionEngine:
     def candidates(self, request: RecommendRequest) -> list[Candidate]:
         summaries = self.store.summaries(request.as_of, origin=(request.origin.lat, request.origin.lon), radius_km=request.radius_km)
         result: list[Candidate] = []
-        for summary in summaries[:20]:
+        # Route a bounded nearest-candidate set.  This keeps interactive
+        # origin changes responsive when the configured provider is public
+        # OSRM, while preserving the documented top-k candidate behaviour.
+        for summary in summaries[:12]:
             raw = self.store.station(summary.id)
             if raw is None:
                 continue

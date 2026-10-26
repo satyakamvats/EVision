@@ -22,7 +22,7 @@ from .errors import api_error
 from .evaluation import run_synthetic_replay
 from .forecast_runtime import ForecastRuntime
 from .geocoding import NominatimGeocoder
-from .routing import FallbackRoutingProvider, OsrmRoutingProvider
+from .routing import FallbackRoutingProvider, OsrmRoutingProvider, RouteResult, haversine_km
 from .replay import CITIES, ReplayStore, ScenarioReplayStore, erlang_c
 from .schemas import CompareOut, CompareRow, FavouriteRequest, PreferencesPatch, QueueExplainOut, RecommendOut, RecommendRequest, RecommendationOption, RevealOut, RouteRequest, StationDetailOut, StationForecastOut, StationListOut, UserProfilePatch
 from .settings import get_settings
@@ -126,8 +126,16 @@ def active_data_source() -> str:
 def routed_summaries(summaries: list, origin: tuple[float, float] | None) -> list:
     if origin is None:
         return summaries
-    for summary in summaries:
-        result = router.route(origin, (summary.lat, summary.lng))
+    # The map can contain up to 100 stations.  Routing every marker through
+    # the public OSRM service makes a new map click look stuck.  Keep routed
+    # times for the nearest candidates and use the same explicit fallback
+    # used elsewhere for the remaining visual markers.
+    for index, summary in enumerate(summaries):
+        if index < 12:
+            result = router.route(origin, (summary.lat, summary.lng))
+        else:
+            distance = haversine_km(*origin, summary.lat, summary.lng) * 1.15
+            result = RouteResult(round(distance, 3), round(distance / 30 * 60, 1), "haversine_fallback")
         summary.distance_km = result.distance_km
         summary.eta_min = result.duration_min
         summary.route_source = result.source
