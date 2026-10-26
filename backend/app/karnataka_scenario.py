@@ -93,11 +93,21 @@ def build_karnataka_scenario(ocm_path: str | Path, raw_root: str | Path, seed: i
             # the generated fixture exactly reproducible.
             day_effect = .04 if at.weekday() < 5 else -.03
             noise = rng.uniform(-.025, .025)
-            offset = city_offsets.get(city, 0) + ((sum(ord(c) for c in station["station_id"]) % 11) - 5) / 100
-            occupancy = min(.95, max(.02, base * city_multipliers.get(city, 1.0) + offset + day_effect + noise))
+            station_hash = sum(ord(c) for c in station["station_id"])
+            offset = city_offsets.get(city, 0) + ((station_hash % 11) - 5) / 100
+            # Reference profiles provide the shared demand shape.  This
+            # station-specific phase/amplitude represents different site
+            # contexts (office, retail, residential, highway) while keeping
+            # the generated Karnataka data reproducible and clearly labelled
+            # as a scenario estimate.
+            phase = station_hash % 24
+            amplitude = .035 + ((station_hash // 7) % 5) * .009
+            station_wave = amplitude * math.sin((at.hour - phase) * 2 * math.pi / 24)
+            secondary_wave = .018 * math.sin((at.hour * 2 + phase) * 2 * math.pi / 24)
+            occupancy = min(.95, max(.02, base * city_multipliers.get(city, 1.0) + offset + day_effect + station_wave + secondary_wave + noise))
             observations.append({"station_id": station["station_id"], "observed_at": at.isoformat().replace("+00:00", "Z"), "occupancy_rate": round(occupancy, 6), "occupied_count": round(occupancy * station["capacity"]), "duration_h": .5, "volume_kwh": round(occupancy * station["capacity"] * (station["power_kw"] or 22) * .5, 3), "electricity_price_inr": 16.0, "service_price_inr": 0.0})
         for city in ("bengaluru", "mysuru", "hubballi-dharwad", "belagavi"):
             weather.append({"city": city, "observed_at": at.isoformat().replace("+00:00", "Z"), "temperature_c": round(25 + 4 * math.sin(hour_index / 24), 3), "precipitation_mm": 0.0, "humidity_pct": 65.0, "source": "scenario_estimate"})
     quality = QualityReport("karnataka_scenario", len(stations) + len(observations), len(stations) + len(observations), checks={"reference_only": True, "cities": ["bengaluru", "mysuru", "hubballi-dharwad", "belagavi"]}, warnings=["Occupancy is a reference-calibrated scenario estimate, not Karnataka observed data."])
-    metadata = {"seed": seed, "reference_sources": sources, "reference_blend": ["UrbanEV"] + sorted(charged_profiles), "station_metadata_source": "open_charge_map", "occupancy_semantics": "scenario_estimate", "fabrication_method": "hourly reference-profile blend + city multipliers + seeded station/day noise", "real_observations": False}
+    metadata = {"seed": seed, "reference_sources": sources, "reference_blend": ["UrbanEV"] + sorted(charged_profiles), "station_metadata_source": "open_charge_map", "occupancy_semantics": "scenario_estimate", "fabrication_method": "hourly reference-profile blend + city multipliers + reproducible station-specific temporal profiles + seeded station/day noise", "real_observations": False}
     return CanonicalDataset("karnataka_scenario", "scenario_estimate", stations, observations, weather, [], _adjacency(stations), _splits(observations), quality, metadata)
