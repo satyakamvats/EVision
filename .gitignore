@@ -18,5 +18,7 @@ frontend/dist/
 data/
 backend/data/
 artifacts/
+*.dump
+*.sql
 __pycache__/
 .pytest_cache/

@@ -1,5 +1,59 @@
 # EVision
 
+## Shareable Docker bundle
+
+The repository includes a production-style Docker Compose setup. It runs the
+PostGIS database, FastAPI backend, migrations, model artifacts, and the React
+frontend behind one local URL.
+
+### First run
+
+1. Copy `.env.example` to `.env` only if you need local overrides. Do not
+   commit `.env` files or private API keys.
+2. From the repository root run:
+
+   ```powershell
+   docker compose up --build
+   ```
+
+3. Open <http://localhost:5173>. The API is available at
+   <http://localhost:8000/docs>.
+
+The backend container automatically waits for Postgres and runs
+`alembic upgrade head` before starting. The named `evision_db_data` volume
+keeps database changes across restarts.
+
+### Give the same setup to teammates
+
+GitHub contains the source and Docker configuration. Generated datasets and
+trained models are intentionally ignored by Git because they can be several
+gigabytes. To give teammates the same forecasts, copy the complete local
+`backend/artifacts` directory with the project (for example in a private
+Drive/OneDrive archive), then they run the same command above. Without that
+directory the app still starts, but it uses its deterministic fallback and
+does not have your trained model registry.
+
+Existing database rows are stored in Docker's local volume and are not copied
+by Git. Export them when they need the same database state:
+
+```powershell
+docker compose exec db pg_dump -U evision -d evision -Fc -f /tmp/evision.dump
+docker compose cp db:/tmp/evision.dump ./evision.dump
+```
+
+They can restore that dump into a fresh volume after the first database
+container is created:
+
+```powershell
+docker compose cp ./evision.dump db:/tmp/evision.dump
+docker compose exec db pg_restore -U evision -d evision --clean --if-exists /tmp/evision.dump
+```
+
+The Supabase project is remote, so users and authentication are not inside
+the Postgres container. Teammates need the same Supabase URL and public anon
+key supplied privately in their local `.env`; never share the Supabase
+service-role key.
+
 EVision is a decision-support web application for electric-vehicle charging. It forecasts short-term station occupancy, estimates queueing time, and presents transparent fastest, balanced, and lowest-carbon charging choices.
 
 The repository is split into product documentation, frontend implementation, and developer utilities. The current deliverable is the React frontend with typed mock data and an API-ready boundary.

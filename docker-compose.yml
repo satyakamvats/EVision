@@ -1,37 +1,63 @@
 services:
   db:
     image: postgis/postgis:16-3.4
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: evision
-      POSTGRES_USER: evision
-      POSTGRES_PASSWORD: evision
-    ports: ["5433:5432"]
+      POSTGRES_DB: ${POSTGRES_DB:-evision}
+      POSTGRES_USER: ${POSTGRES_USER:-evision}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evision}
+    ports:
+      - "${EVISION_DB_PORT:-5433}:5432"
     volumes:
       - evision_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U evision -d evision"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 10s
+
   backend:
-    build: ./backend
-    command: sh -c "python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    working_dir: /app
-    volumes: ["./backend:/app"]
-    env_file:
-      - ./backend/.env
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
-      EVISION_DATABASE_URL: postgresql+psycopg://evision:evision@db:5432/evision
-      EVISION_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
-    ports: ["8000:8000"]
+      EVISION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-evision}:${POSTGRES_PASSWORD:-evision}@db:5432/${POSTGRES_DB:-evision}
+      EVISION_CORS_ORIGINS: http://localhost:${EVISION_FRONTEND_PORT:-5173},http://127.0.0.1:${EVISION_FRONTEND_PORT:-5173}
+      EVISION_ARTIFACTS_DIR: /app/artifacts
+      EVISION_MODE: ${EVISION_MODE:-synthetic_replay}
+      EVISION_ROUTING_PROVIDER: ${EVISION_ROUTING_PROVIDER:-osrm}
+      EVISION_ROUTING_URL: ${EVISION_ROUTING_URL:-https://router.project-osrm.org/route/v1/driving}
+      EVISION_OCM_API_KEY: ${EVISION_OCM_API_KEY:-}
+      EVISION_ELECTRICITY_MAPS_API_KEY: ${EVISION_ELECTRICITY_MAPS_API_KEY:-}
+      EVISION_SUPABASE_URL: ${EVISION_SUPABASE_URL:-}
+      EVISION_SUPABASE_JWKS_URL: ${EVISION_SUPABASE_JWKS_URL:-}
+      EVISION_SUPABASE_ANON_KEY: ${EVISION_SUPABASE_ANON_KEY:-}
+    ports:
+      - "${EVISION_BACKEND_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
   frontend:
-    build: ./frontend
-    ports: ["5173:80"]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    restart: unless-stopped
+    ports:
+      - "${EVISION_FRONTEND_PORT:-5173}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   evision_db_data:
