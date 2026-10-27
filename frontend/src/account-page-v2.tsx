@@ -1,14 +1,18 @@
 import {useEffect, useState} from 'react';
 import {Link} from 'react-router-dom';
-import {AlertTriangle, LogOut, Save, Star, Trash2, UserRound} from 'lucide-react';
+import {AlertTriangle, ArrowRight, LogOut, Save, Star, Trash2, UserRound} from 'lucide-react';
 import {api, type ApiPreferences, type ApiProfile} from './api';
 import {supabase} from './supabase';
+import {useAuth} from './auth-context';
 
 const defaults:ApiPreferences={energy_kwh:20,radius_km:25,risk_kappa:.5,value_of_time_per_h:150,carbon_price_per_kg:.5,carbon_scenario:'tou_profile'};
 
 export function AccountPage(){
+  const {user,loading,configured}=useAuth();
   const [profile,setProfile]=useState<ApiProfile>(); const [preferences,setPreferences]=useState<ApiPreferences>(defaults); const [favourites,setFavourites]=useState<string[]>([]); const [history,setHistory]=useState<Array<{id:string;created_at:string;request:Record<string,unknown>}>>([]); const [name,setName]=useState(''); const [message,setMessage]=useState('Loading account…'); const [saving,setSaving]=useState(false); const [deleting,setDeleting]=useState(false);
-  useEffect(()=>{void Promise.all([api.profile(),api.preferences(),api.favourites(),api.history()]).then(([nextProfile,nextPreferences,nextFavourites,nextHistory])=>{setProfile(nextProfile);setName(nextProfile.display_name??'');setPreferences({...defaults,...nextPreferences});setFavourites(nextFavourites.station_ids);setHistory(nextHistory.items);setMessage('Account data loaded.');}).catch(error=>setMessage(error instanceof Error?error.message:'Sign in to manage your account.'));},[]);
+  useEffect(()=>{if(!user)return;void Promise.all([api.profile(),api.preferences(),api.favourites(),api.history()]).then(([nextProfile,nextPreferences,nextFavourites,nextHistory])=>{setProfile(nextProfile);setName(nextProfile.display_name??'');setPreferences({...defaults,...nextPreferences});setFavourites(nextFavourites.station_ids);setHistory(nextHistory.items);setMessage('Account data loaded.');}).catch(error=>setMessage(error instanceof Error?error.message:'Sign in to manage your account.'));},[user]);
+  if(loading)return <div className="content auth-page"><div className="auth-card card"><div className="eyebrow">EVision account</div><h2>Checking your account…</h2><p className="muted-copy">Please wait while we check your sign-in status.</p></div></div>;
+  if(!user)return <div className="content auth-page"><div className="auth-card card"><div className="eyebrow">EVision account</div><h2>Sign in to your account</h2><p className="muted-copy">Sign in to save preferences, favourite stations, and recommendation history. You can continue using the public dashboard without an account.</p>{!configured&&<div className="notice">Account sign-in is not connected in this environment yet.</div>}<Link className="primary-btn" to="/login">Sign in or create an account <ArrowRight size={15}/></Link><Link className="text-btn" to="/dashboard">Continue to public dashboard</Link></div></div>;
   const save=async()=>{setSaving(true);setMessage('Saving…');try{await api.updateProfile(name);const next=await api.updatePreferences(preferences);setPreferences({...defaults,...next});setMessage('Profile and preferences saved.');}catch(error){setMessage(error instanceof Error?error.message:'Could not save account data.');}finally{setSaving(false)}};
   const signOut=async()=>{if(supabase)await supabase.auth.signOut();window.location.assign('/login')};
   const deleteAccount=async()=>{if(!window.confirm('Delete your saved EVision profile, preferences, favourites, and recommendation history?'))return;setDeleting(true);try{await api.deleteAccount();await signOut();}catch(error){setMessage(error instanceof Error?error.message:'Could not delete account data.');setDeleting(false)}};

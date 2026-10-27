@@ -21,6 +21,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
     restart: unless-stopped
     environment:
       EVISION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-evision}:${POSTGRES_PASSWORD:-evision}@db:5432/${POSTGRES_DB:-evision}
@@ -31,9 +33,6 @@ services:
       EVISION_ROUTING_URL: ${EVISION_ROUTING_URL:-https://router.project-osrm.org/route/v1/driving}
       EVISION_OCM_API_KEY: ${EVISION_OCM_API_KEY:-}
       EVISION_ELECTRICITY_MAPS_API_KEY: ${EVISION_ELECTRICITY_MAPS_API_KEY:-}
-      EVISION_SUPABASE_URL: ${EVISION_SUPABASE_URL:-}
-      EVISION_SUPABASE_JWKS_URL: ${EVISION_SUPABASE_JWKS_URL:-}
-      EVISION_SUPABASE_ANON_KEY: ${EVISION_SUPABASE_ANON_KEY:-}
     ports:
       - "${EVISION_BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -50,8 +49,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     restart: unless-stopped
     ports:
       - "${EVISION_FRONTEND_PORT:-5173}:80"

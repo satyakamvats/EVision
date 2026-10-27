@@ -320,10 +320,53 @@ def _evaluation_payload() -> dict:
     return run_synthetic_replay(store, DecisionEngine(store, routing=router, carbon=ScenarioCarbonProvider()), seed=42, steps=12)
 
 
+def _calibration_report(payload: dict) -> dict:
+    start = datetime(2026, 1, 5, 6, tzinfo=timezone.utc)
+    steps = payload.get("steps", 12)
+    split = max(1, int(steps * 0.67))
+
+    def samples(step_range: range) -> list[tuple[float, float, float]]:
+        result: list[tuple[float, float, float]] = []
+        for step in step_range:
+            as_of = start + timedelta(hours=step)
+            for city in CITIES:
+                city_stations = [station for station in store.stations if station["city"] == city.slug][:1]
+                for station in city_stations:
+                    current = store.occupancy(station, as_of)
+                    previous = store.occupancy(station, as_of - timedelta(hours=1))
+                    actual = store.occupancy(station, as_of + timedelta(hours=1))
+                    result.append((current, actual, max(0.04, abs(current - previous))))
+        return result
+
+    calibration_samples = samples(range(split))
+    holdout_samples = samples(range(split, steps))
+    residuals = sorted(abs(actual - current) for current, actual, _ in calibration_samples)
+    quantile_index = min(len(residuals) - 1, max(0, int(len(residuals) * 0.8) - 1))
+    calibration_margin = max(0.04, residuals[quantile_index]) if residuals else 0.04
+    covered = 0
+    total = len(holdout_samples)
+    widths: list[float] = []
+    for current, actual, baseline_width in holdout_samples:
+        width = max(baseline_width, calibration_margin)
+        covered += int(max(0.0, current - width) <= actual <= min(1.0, current + width))
+        widths.append(min(1.0, current + width) - max(0.0, current - width))
+    coverage = covered / total if total else 0.0
+    interval_width = sum(widths) / len(widths) if widths else 0.0
+    return {
+        "coverage": round(coverage, 4),
+        "mean_interval_width": round(interval_width, 4),
+        "reliability": [{"target": 0.8, "coverage": round(coverage, 4), "count": total}],
+        "method": "past_only_conformal_margin",
+        "calibration_margin": round(calibration_margin, 4),
+        "note": f"Observed coverage is {coverage:.0%} across {total} holdout intervals after calibrating on {len(calibration_samples)} earlier intervals; target coverage is 80%.",
+    }
+
+
 @app.get("/api/v1/evaluation/runs")
 def evaluation_runs():
     payload = _evaluation_payload()
-    return {"runs": [{"id": payload["run_id"], "cities": [c.slug for c in CITIES], "mean_regret_inr": payload["metrics"].get("uncertainty_aware", {}).get("mean_regret", 0), "coverage": payload.get("coverage", None)}]}
+    calibration = _calibration_report(payload)
+    return {"runs": [{"id": payload["run_id"], "cities": [c.slug for c in CITIES], "mean_regret_inr": payload["metrics"].get("uncertainty_aware", {}).get("mean_regret", 0), "coverage": calibration["coverage"]}]}
 
 
 @app.get("/api/v1/evaluation/runs/{run_id}")
@@ -342,7 +385,10 @@ def evaluation_regret(run_id: str):
 
 @app.get("/api/v1/evaluation/runs/{run_id}/uncertainty")
 def evaluation_uncertainty(run_id: str):
-    return {"run_id": run_id, "coverage": None, "mean_interval_width": None, "reliability": [], "note": "Forecast calibration report is produced by the model training pipeline."}
+    payload = _evaluation_payload()
+    if run_id != payload["run_id"]:
+        raise HTTPException(404, "Evaluation run not found")
+    return {"run_id": run_id, **_calibration_report(payload)}
 
 
 @app.get("/api/v1/evaluation/runs/{run_id}/ablation")
