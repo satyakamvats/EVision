@@ -100,3 +100,7 @@ h1,h2,h3,h4,h5,h6,.card-title,.option-label,.eyebrow,.side-label,.sidebar nav a,
 .process-list>div,.landing-process .process-item{transition:padding-left .3s var(--motion-ease),background-color .3s ease}.process-list>div:hover,.landing-process .process-item:hover{padding-left:10px;background:rgba(255,255,255,.28)}
 
 @media(prefers-reduced-motion:reduce){.landing-visual .image-frame::after,.landing-visual .glass-note-top>svg,.landing-visual .mini-ring,.confidence-ring,.mini-map .map-path,.mini-bars i,.map-canvas::after,.map-canvas .segmented button.active::after,.option-list .option-card,.option-card.selected,.option-card .confidence i,.forecast-bars>div,.bar-row i{animation:none!important}}
+
+.compare-simple-intro{padding:20px;border-bottom:1px solid var(--line)}
+.compare-simple-intro p{font-size:12px;color:var(--muted);line-height:1.6;margin:6px 0 0}
+.compare-simple-table .table-head,.compare-simple-table .table-row{grid-template-columns:1.2fr 1.8fr .8fr .8fr}
